@@ -10,19 +10,23 @@ from pyspark.sql.functions import col, when, desc, lit, rand
 from pyspark.ml.recommendation import ALS
 from pyspark.ml.evaluation import RegressionEvaluator
 
-
+# Trainer class handles preprocessing, model training, and evaluation
 class Trainer:  
     def __init__(self):
+        # Initialize Spark session with reduced shuffle partitions
         self.spark = SparkSession.builder.config("spark.sql.shuffle.partitions", "200").getOrCreate()
+        
     def get_preprocessed_data(self):
         print("--- Attempting To Load Spark Dataframe ---")
         try:
+            # Try loading preprocessed data
             pd_events = pd.read_csv('Preprocessed Data/pd_events.csv')
             self.PandasData = pd_events
             self.create_surprise_dataset(pd_events)
             self.SparkData = self.spark.read.csv('Preprocessed Data/pd_events.csv', header=True, inferSchema=True)
             print("--- Spark Dataframe Loaded ---")
         except FileNotFoundError:
+            # If not found, run preprocessing
             print("Events Dataframe not found. Preprocessing data...")
             self.preprocess_events()
 
@@ -41,7 +45,9 @@ class Trainer:
         df_events = df_events.drop(*["timestamp", "event", "transactionid"])
         self.SparkData = df_events
         print("--- Finish Spark Preprocessing ---")
+        
         print("--- Converting Spark Dataframe to Pandas Dataframe ---")
+        # Enable Arrow for faster conversion
         self.spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
         pd_events = df_events.toPandas()
         pd_events.to_csv('Preprocessed Data/pd_events.csv', index=False)
@@ -59,7 +65,7 @@ class Trainer:
         sample_data = Dataset.load_from_df(sample_df, reader)
         self.SampleSurpriseData = sample_data
 
-        #Creating full dataset
+        # Create full dataset for SVD/NMF
         reader = Reader(rating_scale=(1, 5))
         full_data = Dataset.load_from_df(pd_events, reader)
         self.SurpriseData = full_data
@@ -68,6 +74,7 @@ class Trainer:
     def train_model(self, model_name):
         self.get_preprocessed_data()
         print(f"--- Start Training {model_name} Model---")
+        # Select training method based on model_name
         match(model_name):
             case "als":
                 model = self.ALS_trainer()
@@ -83,6 +90,7 @@ class Trainer:
         return model
 
     def ALS_trainer(self):
+        # Initialize ALS model
         als = ALS(
                 userCol="visitorid",
                 itemCol="itemid",
@@ -101,8 +109,7 @@ class Trainer:
         return model
     
     def ALS_evaluator(self, model, test_data):
-        
-        # Get predictions on test set
+        # Evaluate ALS using RMSE and MAE
         predictions = model.transform(test_data)
         predictions = predictions.na.drop()
 
@@ -120,6 +127,7 @@ class Trainer:
         print(f"MAE ALS: {mae}")
 
     def KNN_trainer(self, mode):
+        # Train a KNN model (user/item-based based on mode)
         surprise_data = self.SampleSurpriseData
         trainset, testset = train_test_split(surprise_data, test_size=0.2)
         sim_options = {"name": "cosine", "user_based": bool(mode)}
@@ -132,6 +140,7 @@ class Trainer:
         return model
     
     def SVD_trainer(self):
+        # Train a SVD model
         surprise_data = self.SurpriseData
         trainset, testset = train_test_split(surprise_data, test_size=0.2)
         model = SVD(n_factors=50, n_epochs=20, lr_all=0.005, reg_all=0.1)
@@ -143,6 +152,7 @@ class Trainer:
         return model
     
     def NMF_trainer(self):
+        # Train a NMF model
         surprise_data = self.SurpriseData
         trainset, testset = train_test_split(surprise_data, test_size=0.2)
         model = NMF(n_factors=20, n_epochs=50)
@@ -154,11 +164,14 @@ class Trainer:
         return model
 
     def get_spark_data(self):
+        # Getter for Spark DataFrame
         return self.SparkData
     
     def get_pandas_data(self):
+        # Getter for Pandas DataFrame
         return self.PandasData
 
+# Recommender class handles generating and displaying recommendations
 class Recommender:
     def __init__(self, model, model_name, spark_data, pandas_data):
         self.model = model
@@ -196,6 +209,7 @@ class Recommender:
                 self.recommend_new_user(int(n))
             
     def recommend_existing_user(self, n=10, default_user=None):
+        # Generate recommendations for an existing user
         if self.model_name == "als":
             df_events = self.spark_data
             model = self.model
@@ -239,6 +253,7 @@ class Recommender:
                 print(f"Item ID: {item}, Prediction: {prediction:0.2f}")
 
     def recommend_new_user(self, n=10):
+        # Recommend items to a new user using popularity and randomness
         df_events = self.spark_data
         alpha = 0.7  # Adjust for more/less exploration (0 means fully random, 1 means fully popular)
         # Get popularity score equal to sum of ratings
