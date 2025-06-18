@@ -42,7 +42,7 @@ A recommendation engine for e-commerce event data, using a combination of **coll
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<your-username>/ecommerce-recommender.git
+git clone https://github.com/<your-username>/E-Commerce-Recommendation-System.git
 cd ecommerce-recommender
 
 # 2. Create virtual environment
